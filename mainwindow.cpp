@@ -9,10 +9,297 @@
 #include <QMessageBox>
 #include <QElapsedTimer>
 
+MainWindow::MainWindow(QWidget *parent) :
+    QMainWindow(parent),
+    ui(new Ui::MainWindow), FindNext(false), StopFlag(true)
+{
+   Inits();
+}
 
 void MainWindow::exit()
 {
     QApplication::quit();
+}
+
+void MainWindow::closeEvent(QCloseEvent *e)\
+{
+    StopFlag=true;
+    if (lg) delete lg;
+    QWidget::closeEvent(e);
+}
+
+MainWindow::~MainWindow()
+{
+    StopFlag=true;
+    QFile dbFile;
+    dbFile.setFileName("db.xml");
+    QDomDocument DBDOM;
+    QDomElement dEr0=DBDOM.createElement("db");
+    DBDOM.appendChild(dEr0);
+
+    for (int i=0; i<ListSourseModel->rowCount(); ++i)
+    {
+       QDomElement dEr1=DBDOM.createElement("list");
+       QModelIndex mi=ListSourseModel->index(i,0);
+       dEr1.setAttribute("mtr",ListSourseModel->data(mi).toString());
+       mi=ListSourseModel->index(i,1);
+       dEr1.setAttribute("color",ListSourseModel->data(mi).toString());
+       mi=ListSourseModel->index(i,2);
+       dEr1.setAttribute("length",ListSourseModel->data(mi).toString());
+       mi=ListSourseModel->index(i,3);
+       dEr1.setAttribute("width",ListSourseModel->data(mi).toString());
+       dEr0.appendChild(dEr1);
+    }
+
+    QDomElement dEr1=DBDOM.createElement("svg");
+    dEr1.setAttribute("path",SVGPath);
+    dEr0.appendChild(dEr1);
+
+    QTextStream ts(&dbFile);
+    if (dbFile.open(QIODevice::WriteOnly))
+    {
+        DBDOM.save(ts,0);
+        dbFile.close();
+    }
+
+
+    delete ui;
+}
+
+void MainWindow::Inits()
+{
+    ui->setupUi(this);
+    connect(ui->action,SIGNAL(triggered(bool)),this,SLOT(exit()));
+    connect(ui->action_2,SIGNAL(triggered(bool)),this,SLOT(FolderChoose()));
+
+    scene = new QGraphicsScene;
+    ui->graphicsView->setScene(scene);
+
+    QGraphicsTextItem *item1 = scene->addText("start");
+    item1->setPos(QPointF(-50000,-50000));
+
+    QGraphicsTextItem *item2 = scene->addText("end");
+    item2->setPos(QPointF(50000,50000));
+
+    ListGI = new QGraphicsRectItem;
+
+    ui->splitter->setSizes(QList <int> () <<600 <<300);
+
+    ListSourseModel = new QStandardItemModel(0,4);
+    ListSourseModel->setHeaderData(0, Qt::Horizontal, "Материал", Qt::DisplayRole);
+    ListSourseModel->setHeaderData(1, Qt::Horizontal, "Цвет", Qt::DisplayRole);
+    ListSourseModel->setHeaderData(2, Qt::Horizontal, "Длина", Qt::DisplayRole);
+    ListSourseModel->setHeaderData(3, Qt::Horizontal, "Ширина", Qt::DisplayRole);
+
+    ui->tableView->setEditTriggers(QAbstractItemView::NoEditTriggers);
+
+    ui->tableView->setModel(ListSourseModel);
+    ui->tableView->verticalHeader()->setDefaultSectionSize(20);
+
+    ListSourseModelsm = new QItemSelectionModel(ListSourseModel);
+    ui->tableView->setSelectionModel(ListSourseModelsm);
+
+    connect(ListSourseModelsm,SIGNAL(currentRowChanged(QModelIndex,QModelIndex)),this,SLOT(IndexChange(QModelIndex)));
+    connect(ListSourseModelsm,SIGNAL(currentChanged(QModelIndex,QModelIndex)),this,SLOT(FindNextDown()));
+
+    QFile dbFile;
+    dbFile.setFileName("db.xml");
+    maxlwList=0;
+    QDomDocument DBDOM;
+
+    if (dbFile.open(QIODevice::ReadOnly))
+    {
+        if (DBDOM.setContent(&dbFile))
+        {
+          QDomElement MainEl = DBDOM.documentElement();
+          QDomNode dN0=MainEl.firstChild();
+          while (!dN0.isNull())
+          {
+              if (dN0.isElement())
+              {
+                 QDomElement dE0=dN0.toElement();
+                 if (dE0.tagName()=="list")
+                 {
+
+                     int CurrRow=ListSourseModel->rowCount();
+
+                     QList<QStandardItem*>itm;
+
+                     ListSourseModel->insertRow(CurrRow,itm);
+                     QModelIndex index = ListSourseModel->index(CurrRow, 0);
+                     ListSourseModel->setData(index,dE0.attribute("mtr"));
+                     index = ListSourseModel->index(CurrRow, 1);
+                     ListSourseModel->setData(index,dE0.attribute("color"));
+                     index = ListSourseModel->index(CurrRow, 2);
+                     ListSourseModel->setData(index,dE0.attribute("length"));
+                     bool ok;
+                     float l=dE0.attribute("length").toFloat(&ok);
+                     if (ok)
+                         if (l>maxlwList) maxlwList=l;
+
+                     index = ListSourseModel->index(CurrRow, 3);
+                     ListSourseModel->setData(index,dE0.attribute("width"));
+                     float w=dE0.attribute("width").toFloat(&ok);
+                     if (ok)
+                         if (w>maxlwList) maxlwList=w;
+
+                 }
+                 if (dE0.tagName()=="svg")
+                 {
+                    SVGPath=dE0.attribute("path");
+                 }
+              }
+              dN0=dN0.nextSibling();
+          }
+        }
+        dbFile.close();
+    }
+
+    lg = new Logger();
+
+    connect(ui->pushButton_5,SIGNAL(clicked(bool)),this,SLOT(FindStr()));
+    connect(ui->lineEdit_2,SIGNAL(returnPressed()),this,SLOT(FindStr()));
+    connect(ui->pushButton_3,SIGNAL(clicked(bool)),this,SLOT(MakeChange()));
+    connect(ui->pushButton,SIGNAL(clicked(bool)),this,SLOT(NewList()));
+    connect(ui->pushButton_4,SIGNAL(clicked(bool)),this,SLOT(DelItem()));
+    connect(ui->pushButton_6,SIGNAL(clicked(bool)),this,SLOT(RunSlot()));
+    connect(ui->pushButton_2,SIGNAL(clicked(bool)),this,SLOT(ShowHideListPanel()));
+    connect(lg,SIGNAL(StopSignal()),this,SLOT(StopSignal()));
+
+    ui->pushButton_7->setIcon(QPixmap(":/g16782.png"));
+    ui->pushButton_8->setIcon(QPixmap(":/g16780.png"));
+    ui->pushButton_12->setIcon(QPixmap(":/g4495.png"));
+    ui->pushButton_13->setIcon(QPixmap(":/g4511.png"));
+
+    connect(ui->pushButton_7,SIGNAL(clicked(bool)),this,SLOT(RotateSelectedLeft()));
+    connect(ui->pushButton_8,SIGNAL(clicked(bool)),this,SLOT(RotateSelectedRight()));
+
+    connect(ui->pushButton_10,SIGNAL(clicked(bool)),this,SLOT(DeleteListFromScene()));
+    connect(ui->pushButton_9,SIGNAL(clicked(bool)),this,SLOT(AddListToScene()));
+}
+
+void MainWindow::RunSlot()
+{
+
+    if (!StopFlag)
+    {
+       lg->show();
+       lg->activateWindow();
+       return;
+    }
+
+    StopFlag=false;
+
+    lg->ListSourseModel->removeRows(0,lg->ListSourseModel->rowCount());
+    lg->show();
+
+
+
+    clearscene();
+    GetAvailSvgFromFolder();
+    GetMaxListSize();
+    for (FigID=0; FigID<SVGFn.count(); FigID++)
+    {
+        int CurrRow=lg->ListSourseModel->rowCount();
+        QList<QStandardItem*> itm;
+        lg->ListSourseModel->insertRow(CurrRow,itm);
+        QModelIndex ci=lg->ListSourseModel->index(CurrRow,0);
+        QFileInfo fi(SVGFn.at(FigID));
+        lg->ListSourseModel->setData(ci,fi.fileName());
+    }
+
+    QApplication::processEvents();
+
+    for (FigID=0; FigID<SVGFn.count(); FigID++)
+    {
+
+        if (StopFlag) return;
+
+        QModelIndex ci=lg->ListSourseModel->index(FigID,1);
+        lg->ListSourseModel->setData(ci,"Открытие файла");
+        QApplication::processEvents();
+        OpenFile();
+        if (maxpp.at(FigID)<0)
+        {
+            lg->ListSourseModel->setData(ci,"Не найдена выкройка");
+            QList <SFigRect> nrect;
+            rects.append(nrect);
+            continue;
+        }
+
+        if (gpState.at(FigID).fs==FSTooBig)
+        {
+            lg->ListSourseModel->setData(ci,"Размеры выкройки больше размеров имеющихся листов");
+            QList <SFigRect> nrect;
+            rects.append(nrect);
+            continue;
+        }
+
+        GetMaxMinPos();
+        lg->ListSourseModel->setData(ci,"Преобразование");
+        QApplication::processEvents();
+        SetFigRect();
+        bool q;
+        for (int i=0; i<NQuality; ++i)
+        {
+            q=true;
+            for (int j=0; j<rects.at(FigID).count(); ++j)
+            {
+                if ((rects.at(FigID).at(j).TypeCollise==Undefine) || (rects.at(FigID).at(j).TypeCollise==PartCollise))
+                {
+                    q=false;
+                    SFigRect fr=rects.at(FigID).at(j);
+                    GetTypeCollide(j,&fr);
+                    QList <SFigRect> drects=rects.at(FigID);
+                    drects.replace(j,fr);
+                    rects.replace(FigID,drects);
+                }
+            }
+            if (q) break;
+            if (i<(NQuality-1))
+            {
+                int k=rects.at(FigID).count();
+                for (int j=0; j<k; ++j)
+                    if (rects.at(FigID).at(j).TypeCollise==PartCollise)
+                        BrokeRect(j);
+            }
+        }
+        GlueRects();
+        int TotalRects=0;
+        float FigSquare=0;
+        for (int j=0; j<rects.at(FigID).count(); ++j)
+        {
+            if ((rects.at(FigID).at(j).TypeCollise==Collise) || (rects.at(FigID).at(j).TypeCollise==PartCollise))
+            {
+                FigSquare+=rects.at(FigID).at(j).Figrect->rect().width()*rects.at(FigID).at(j).Figrect->rect().height();
+                rects.at(FigID).at(j).Figrect->setBrush(QBrush(QColor(18,73,114,50)));
+                rects.at(FigID).at(j).Figrect->setParentItem(gpiRotate.at(FigID).at(maxpp.at(FigID)));
+                ++TotalRects;
+            }
+        }
+        FigSquare/=1e+06;
+        SFigState fs=gpState.at(FigID);
+        fs.Fsquare=FigSquare;
+        gpState.replace(FigID,fs);
+
+        lg->ListSourseModel->setData(ci,"Кол-во фигур: "+QString::number(TotalRects)+"; Площадь: "+QString::number(FigSquare));
+        QApplication::processEvents();
+    }
+
+    AnalizeFigs();
+
+    for (int jc=0; jc<gpState.count(); ++jc)
+    {
+        SFigState fs=gpState.at(jc);
+        if (fs.fs==FSInProcess)
+        {
+            QModelIndex ci=lg->ListSourseModel->index(fs.nn,1);
+            lg->ListSourseModel->setData(ci,"Не удалось разместить выкройку");
+        }
+    }
+
+    StopFlag=true;
+
 }
 
 float GetLen(QPointF p2, QPointF p1)
@@ -43,12 +330,6 @@ void MainWindow::RotateToNormal(QLineF maxlenLine)
     fi-=90;
 
     QGraphicsPathItem * pi;
-  /*  foreach (pi, gpiRotate) {
-        scene->removeItem(pi);
-        delete pi;
-    }
-    gpiRotate.clear();*/
-
 
 
     QList <QGraphicsPathItem*> ngpiRotate;
@@ -241,240 +522,7 @@ void MainWindow::FolderChoose()
     SVGPath=dialog.getExistingDirectory();
 }
 
-void MainWindow::Inits()
-{
-    ui->setupUi(this);
-    connect(ui->action,SIGNAL(triggered(bool)),this,SLOT(exit()));
-    connect(ui->action_2,SIGNAL(triggered(bool)),this,SLOT(FolderChoose()));
 
-    scene = new QGraphicsScene;
-    ui->graphicsView->setScene(scene);
-
-    QGraphicsTextItem *item1 = scene->addText("start");
-    item1->setPos(QPointF(-50000,-50000));
-
-    QGraphicsTextItem *item2 = scene->addText("end");
-    item2->setPos(QPointF(50000,50000));
-
-    ListGI = new QGraphicsRectItem;
-
-    ui->splitter->setSizes(QList <int> () <<600 <<300);
-
-    ListSourseModel = new QStandardItemModel(0,4);
-    ListSourseModel->setHeaderData(0, Qt::Horizontal, "Материал", Qt::DisplayRole);
-    ListSourseModel->setHeaderData(1, Qt::Horizontal, "Цвет", Qt::DisplayRole);
-    ListSourseModel->setHeaderData(2, Qt::Horizontal, "Длина", Qt::DisplayRole);
-    ListSourseModel->setHeaderData(3, Qt::Horizontal, "Ширина", Qt::DisplayRole);
-
-    ui->tableView->setEditTriggers(QAbstractItemView::NoEditTriggers);
-
-    ui->tableView->setModel(ListSourseModel);
-    ui->tableView->verticalHeader()->setDefaultSectionSize(20);
-
-    ListSourseModelsm = new QItemSelectionModel(ListSourseModel);
-    ui->tableView->setSelectionModel(ListSourseModelsm);
-
-    connect(ListSourseModelsm,SIGNAL(currentRowChanged(QModelIndex,QModelIndex)),this,SLOT(IndexChange(QModelIndex)));
-    connect(ListSourseModelsm,SIGNAL(currentChanged(QModelIndex,QModelIndex)),this,SLOT(FindNextDown()));
-
-    QFile dbFile;
-    dbFile.setFileName("db.xml");
-    maxlwList=0;
-    QDomDocument DBDOM;
-
-    if (dbFile.open(QIODevice::ReadOnly))
-    {
-        if (DBDOM.setContent(&dbFile))
-        {
-          QDomElement MainEl = DBDOM.documentElement();
-          QDomNode dN0=MainEl.firstChild();
-          while (!dN0.isNull())
-          {
-              if (dN0.isElement())
-              {
-                 QDomElement dE0=dN0.toElement();
-                 if (dE0.tagName()=="list")
-                 {
-
-                     int CurrRow=ListSourseModel->rowCount();
-
-                     QList<QStandardItem*>itm;
-
-                     ListSourseModel->insertRow(CurrRow,itm);
-                     QModelIndex index = ListSourseModel->index(CurrRow, 0);
-                     ListSourseModel->setData(index,dE0.attribute("mtr"));
-                     index = ListSourseModel->index(CurrRow, 1);
-                     ListSourseModel->setData(index,dE0.attribute("color"));
-                     index = ListSourseModel->index(CurrRow, 2);
-                     ListSourseModel->setData(index,dE0.attribute("length"));
-                     bool ok;
-                     float l=dE0.attribute("length").toFloat(&ok);
-                     if (ok)
-                         if (l>maxlwList) maxlwList=l;
-
-                     index = ListSourseModel->index(CurrRow, 3);
-                     ListSourseModel->setData(index,dE0.attribute("width"));
-                     float w=dE0.attribute("width").toFloat(&ok);
-                     if (ok)
-                         if (w>maxlwList) maxlwList=w;
-
-                 }
-                 if (dE0.tagName()=="svg")
-                 {
-                    SVGPath=dE0.attribute("path");
-                 }
-              }
-              dN0=dN0.nextSibling();
-          }
-        }
-        dbFile.close();
-    }
-
-    lg = new Logger();
-
-    connect(ui->pushButton_5,SIGNAL(clicked(bool)),this,SLOT(FindStr()));
-    connect(ui->lineEdit_2,SIGNAL(returnPressed()),this,SLOT(FindStr()));
-    connect(ui->pushButton_3,SIGNAL(clicked(bool)),this,SLOT(MakeChange()));
-    connect(ui->pushButton,SIGNAL(clicked(bool)),this,SLOT(NewList()));
-    connect(ui->pushButton_4,SIGNAL(clicked(bool)),this,SLOT(DelItem()));
-    connect(ui->pushButton_6,SIGNAL(clicked(bool)),this,SLOT(RunSlot()));
-    connect(ui->pushButton_2,SIGNAL(clicked(bool)),this,SLOT(ShowHideListPanel()));
-    connect(lg,SIGNAL(StopSignal()),this,SLOT(StopSignal()));
-
-    ui->pushButton_7->setIcon(QPixmap(":/g16782.png"));
-    ui->pushButton_8->setIcon(QPixmap(":/g16780.png"));
-
-    connect(ui->pushButton_7,SIGNAL(clicked(bool)),this,SLOT(RotateSelectedLeft()));
-    connect(ui->pushButton_8,SIGNAL(clicked(bool)),this,SLOT(RotateSelectedRight()));
-
-    connect(ui->pushButton_10,SIGNAL(clicked(bool)),this,SLOT(DeleteListFromScene()));
-    connect(ui->pushButton_9,SIGNAL(clicked(bool)),this,SLOT(AddListToScene()));
-}
-
-void MainWindow::RunSlot()
-{
-
-    if (!StopFlag)
-    {
-       lg->show();
-       lg->activateWindow();
-       return;
-    }
-
-    StopFlag=false;
-
-    lg->ListSourseModel->removeRows(0,lg->ListSourseModel->rowCount());
-    lg->show();
-
-
-
-    clearscene();
-    GetAvailSvgFromFolder();
-    GetMaxListSize();
-    for (FigID=0; FigID<SVGFn.count(); FigID++)
-    {
-        int CurrRow=lg->ListSourseModel->rowCount();
-        QList<QStandardItem*> itm;
-        lg->ListSourseModel->insertRow(CurrRow,itm);
-        QModelIndex ci=lg->ListSourseModel->index(CurrRow,0);
-        QFileInfo fi(SVGFn.at(FigID));
-        lg->ListSourseModel->setData(ci,fi.fileName());
-    }
-
-    QApplication::processEvents();
-
-    for (FigID=0; FigID<SVGFn.count(); FigID++)
-    {
-
-        if (StopFlag) return;
-
-        QModelIndex ci=lg->ListSourseModel->index(FigID,1);
-        lg->ListSourseModel->setData(ci,"Открытие файла");
-        QApplication::processEvents();
-        OpenFile();
-        if (maxpp.at(FigID)<0)
-        {
-            lg->ListSourseModel->setData(ci,"Не найдена выкройка");
-            QList <SFigRect> nrect;
-            rects.append(nrect);
-            continue;
-        }
-
-        if (gpState.at(FigID).fs==FSTooBig)
-        {
-            lg->ListSourseModel->setData(ci,"Размеры выкройки больше размеров имеющихся листов");
-            QList <SFigRect> nrect;
-            rects.append(nrect);
-            continue;
-        }
-
-        GetMaxMinPos();
-        lg->ListSourseModel->setData(ci,"Преобразование");
-        QApplication::processEvents();
-        SetFigRect();
-        bool q;
-        for (int i=0; i<NQuality; ++i)
-        {
-            q=true;
-            for (int j=0; j<rects.at(FigID).count(); ++j)
-            {
-                if ((rects.at(FigID).at(j).TypeCollise==Undefine) || (rects.at(FigID).at(j).TypeCollise==PartCollise))
-                {
-                    q=false;
-                    SFigRect fr=rects.at(FigID).at(j);
-                    GetTypeCollide(j,&fr);
-                    QList <SFigRect> drects=rects.at(FigID);
-                    drects.replace(j,fr);
-                    rects.replace(FigID,drects);
-                }
-            }
-            if (q) break;
-            if (i<(NQuality-1))
-            {
-                int k=rects.at(FigID).count();
-                for (int j=0; j<k; ++j)
-                    if (rects.at(FigID).at(j).TypeCollise==PartCollise)
-                        BrokeRect(j);
-            }
-        }
-        GlueRects();
-        int TotalRects=0;
-        float FigSquare=0;
-        for (int j=0; j<rects.at(FigID).count(); ++j)
-        {
-            if ((rects.at(FigID).at(j).TypeCollise==Collise) || (rects.at(FigID).at(j).TypeCollise==PartCollise))
-            {
-             //   scene->addItem(rects.at(FigID).at(j).Figrect);
-                FigSquare+=rects.at(FigID).at(j).Figrect->rect().width()*rects.at(FigID).at(j).Figrect->rect().height();
-                rects.at(FigID).at(j).Figrect->setBrush(QBrush(QColor(18,73,114,50)));
-                rects.at(FigID).at(j).Figrect->setParentItem(gpiRotate.at(FigID).at(maxpp.at(FigID)));
-                ++TotalRects;
-            }
-        }
-        FigSquare/=1e+06;
-        SFigState fs=gpState.at(FigID);
-        fs.Fsquare=FigSquare;
-        gpState.replace(FigID,fs);
-
-        lg->ListSourseModel->setData(ci,"Кол-во фигур: "+QString::number(TotalRects)+"; Площадь: "+QString::number(FigSquare));
-        QApplication::processEvents();
-    }
-
-    AnalizeFigs();
-
-    for (int jc=0; jc<gpState.count(); ++jc)
-    {
-        SFigState fs=gpState.at(jc);
-        if (fs.fs==FSInProcess)
-        {
-            QModelIndex ci=lg->ListSourseModel->index(fs.nn,1);
-            lg->ListSourseModel->setData(ci,"Не удалось разместить выкройку");
-        }
-    }
-
-    StopFlag=true;
-
-}
 
 void MainWindow::DelItem()
 {
@@ -619,58 +667,6 @@ void MainWindow::FindStr()
 
 }
 
-MainWindow::MainWindow(QWidget *parent) :
-    QMainWindow(parent),
-    ui(new Ui::MainWindow), FindNext(false), StopFlag(true)
-{
-   Inits();
-}
-
-void MainWindow::closeEvent(QCloseEvent *e)\
-{
-    StopFlag=true;
-    if (lg) delete lg;
-    QWidget::closeEvent(e);
-}
-
-MainWindow::~MainWindow()
-{
-    StopFlag=true;
-    QFile dbFile;
-    dbFile.setFileName("db.xml");
-    QDomDocument DBDOM;
-    QDomElement dEr0=DBDOM.createElement("db");
-    DBDOM.appendChild(dEr0);
-
-    for (int i=0; i<ListSourseModel->rowCount(); ++i)
-    {
-       QDomElement dEr1=DBDOM.createElement("list");
-       QModelIndex mi=ListSourseModel->index(i,0);
-       dEr1.setAttribute("mtr",ListSourseModel->data(mi).toString());
-       mi=ListSourseModel->index(i,1);
-       dEr1.setAttribute("color",ListSourseModel->data(mi).toString());
-       mi=ListSourseModel->index(i,2);
-       dEr1.setAttribute("length",ListSourseModel->data(mi).toString());
-       mi=ListSourseModel->index(i,3);
-       dEr1.setAttribute("width",ListSourseModel->data(mi).toString());
-       dEr0.appendChild(dEr1);
-    }
-
-    QDomElement dEr1=DBDOM.createElement("svg");
-    dEr1.setAttribute("path",SVGPath);
-    dEr0.appendChild(dEr1);
-
-    QTextStream ts(&dbFile);
-    if (dbFile.open(QIODevice::WriteOnly))
-    {
-        DBDOM.save(ts,0);
-        dbFile.close();
-    }
-
-
-    delete ui;
-}
-
 void MainWindow::GetMaxMinPos()
 {
     if (!gpiRotate.at(FigID).at(maxpp.at(FigID)))
@@ -707,14 +703,6 @@ void MainWindow::GetMaxMinPos()
 
 void MainWindow::SetFigRect()
 {
-  /*  foreach (SFigRect fr, rects) {
-       if ((fr.TypeCollise==Collise) || (fr.TypeCollise==PartCollise))
-       {
-         //  scene->removeItem(fr.Figrect);
-           delete fr.Figrect;
-       }
-    }*/
-//    rects.clear();
 
     QList <SFigRect> nrect;
     rects.append(nrect);
@@ -728,7 +716,6 @@ void MainWindow::SetFigRect()
         {
             QGraphicsRectItem * FigRect = new QGraphicsRectItem;
             FigRect->setRect(leftp+j*width1,hip+i*height1,width1,height1);
-            // FigRect->setPos(leftp+5000+j*width1,hip+i*height1);
             pi.Figrect=FigRect;
             pi.TypeCollise=Undefine;
             QList<SFigRect> drects=rects.at(FigID);
@@ -754,7 +741,6 @@ bool MainWindow::isPointinPath(QPointF pt)
             float xMin=qMin(lf.p1().x(),lf.p2().x());
             float xMax=qMax(lf.p1().x(),lf.p2().x());
             float yMin=qMin(lf.p1().y(),lf.p2().y());
-          //  float yMax=qMax(lf.p1().y(),lf.p2().y());
 
             if ((pt.x()<xMin) || (pt.x()>xMax)) continue;
             if (pt.y()<yMin) continue;
@@ -762,13 +748,12 @@ bool MainWindow::isPointinPath(QPointF pt)
             float a=lf.p1().y();
             if (qAbs(lf.p2().x()-lf.p1().x())<0.001)
             {
-               // if ((pt.y()>=yMin) && (pt.y()<=yMax) && (pt.x()>=xMin) && (pt.x()<=xMax)) ++CrossCount;
                 continue;
             }
             float b=(lf.p2().y()-lf.p1().y())/(lf.p2().x()-lf.p1().x());
             float crossY=a+b*(pt.x()-lf.p1().x());
 
-            if (/*(crossY>=yMin) && (crossY<=yMax) && */(crossY<=pt.y()))
+            if (crossY<=pt.y())
                 ++CrossCount;
 
         }
@@ -782,12 +767,6 @@ bool MainWindow::isPointinPath(QPointF pt)
 void MainWindow::GetTypeCollide(int j, SFigRect * fr)
 {
     QRectF rct=rects.at(FigID).at(j).Figrect->rect();
-
-   // rct.translate(5000,0);
-
-  /*  QGraphicsRectItem * gi = new QGraphicsRectItem;
-    gi->setRect(rct);
-    scene->addItem(gi); */
 
     QPointF p1=rct.topLeft();
     p1.setX(p1.x()+0.1);
@@ -820,15 +799,6 @@ void MainWindow::GetTypeCollide(int j, SFigRect * fr)
 
 }
 
-/*void MainWindow::SetColorForRect(int j)
-{
-    QGraphicsRectItem * FigRect=rects.at(j).Figrect;
-    if (rects.at(j).TypeCollise==Collise)
-        FigRect->setBrush(QBrush(QColor(18,73,114,50)));
-    if (rects.at(j).TypeCollise==PartCollise)
-        FigRect->setBrush(QBrush(QColor(255,200,114,50)));
-}*/
-
 void MainWindow::BrokeRect(int j)
 {
     SFigRect fr=rects.at(FigID).at(j);
@@ -849,7 +819,6 @@ void MainWindow::BrokeRect(int j)
     rct.setWidth(fr.Figrect->rect().width()/2);
     rct.setHeight(fr.Figrect->rect().height()/2);
     fr1.Figrect->setRect(rct);
-  //  scene->addItem(fr1.Figrect);
 
     drects.append(fr1);
 
@@ -861,7 +830,6 @@ void MainWindow::BrokeRect(int j)
     rct.setWidth(fr.Figrect->rect().width()/2);
     rct.setHeight(fr.Figrect->rect().height()/2);
     fr2.Figrect->setRect(rct);
-  //  scene->addItem(fr2.Figrect);
     drects.append(fr2);
 
     SFigRect fr3;
@@ -872,7 +840,6 @@ void MainWindow::BrokeRect(int j)
     rct.setWidth(fr.Figrect->rect().width()/2);
     rct.setHeight(fr.Figrect->rect().height()/2);
     fr3.Figrect->setRect(rct);
-  //  scene->addItem(fr3.Figrect);
     drects.append(fr3);
 
     SFigRect fr4;
@@ -883,11 +850,8 @@ void MainWindow::BrokeRect(int j)
     rct.setWidth(fr.Figrect->rect().width()/2);
     rct.setHeight(fr.Figrect->rect().height()/2);
     fr4.Figrect->setRect(rct);
-  //  scene->addItem(fr4.Figrect);
     drects.append(fr4);
 
-
-  //  scene->removeItem(fr.Figrect);
     delete fr.Figrect;
     drects.replace(j,fr);
 
@@ -999,11 +963,9 @@ void MainWindow::clearscene()
     for (int i=0; i<maxpp.count(); ++i) {
         if (maxpp.at(i)>=0)
         {
-           // scene->removeItem(gpi.at(i).at(maxpp.at(i)));
             scene->removeItem(gpiRotate.at(i).at(maxpp.at(i)));
             delete gpi.at(i).at(maxpp.at(i));
             delete gpiRotate.at(i).at(maxpp.at(i));
-
         }
     }
 
@@ -1112,11 +1074,6 @@ void MainWindow::AnalizeFigs()
         }
         return;
     }
-
-    //test
-    /*SFigState fs=gpState.at(0);
-    for (int i=0; i<25; ++i)
-        gpState.append(fs); */
 
     // Unset figures with more square than bigger list
     for (int i=0; i<gpState.count(); ++i) {
@@ -1321,11 +1278,6 @@ void MainWindow::AnalizeFigs()
 
 
         }
-    /*    else
-        {
-            k=MaxFigPerList+1;
-            Prlevel-=0.1;
-        } */
 
 
         if (!SetupOK)
@@ -1564,21 +1516,6 @@ QPointF MainWindow::GetLeftTopPointOfFig(int FigID)
     QPointF res;
     res=gpiRotate.at(FigID).at(maxpp.at(FigID))->boundingRect().topLeft();
     return res;
-   /* for (int i=0; i<gpiRotate.at(FigID).at(maxpp.at(FigID))->childItems().count(); ++i)
-    {
-       QGraphicsItem * itm = gpiRotate.at(FigID).at(maxpp.at(FigID))->childItems().at(i);
-       if (i==0)
-       {
-           res=itm->boundingRect().topLeft();
-       }
-       else
-       {
-           if (itm->boundingRect().left()<res.x()) res.setX(itm->boundingRect().left());
-           if (itm->boundingRect().top()<res.y()) res.setY(itm->boundingRect().top());
-       }
-    }
-    return res;*/
-
 }
 
 bool MainWindow::isFigsCollide(int f1, int f2)
@@ -1623,16 +1560,6 @@ bool MainWindow::isFigInList(int Realnum, QGraphicsRectItem* litm, bool * BadWid
     *BadWidth=Testrct.right()>litmrct.right();
     *BadHeight=Testrct.bottom()>litmrct.bottom();
     return (!*BadWidth && !*BadHeight) ;
-            //gpiRotate.at(Realnum).at(maxpp.at(Realnum))->collidesWithItem(litm,Qt::ContainsItemBoundingRect);
-    /*
-    bool q=true;
-   // for (int j=0; j<gpiRotate.at(Realnum).at(maxpp.at(Realnum))->childItems().count(); ++j)
-        if (!litm->collidesWithItem(gpiRotate.at(Realnum).at(maxpp.at(Realnum)),Qt::ContainsItemBoundingRect))
-        {
-            q=false;
-           // break;
-        }
-    return q;*/
 }
 
 bool MainWindow::TrySetupFigs(QList <int> * Figs, SLists lst, bool SetLabels = true)
@@ -1671,20 +1598,12 @@ bool MainWindow::TrySetupFigs(QList <int> * Figs, SLists lst, bool SetLabels = t
         bool toNextFig=false;
         bool ExitFlag=false;
         int realnum=gpState.at(Figs->at(i)).nn;
-     /*   qDebug()<<"";
-        qDebug()<<"i="<<i;
-        qDebug()<<"rn="<<realnum;*///
         QPointF pt=GetLeftTopPointOfFig(realnum);
         float Xodds;
         float Yodds;
         GetOdds(StepX,StepY,realnum,&Xodds,&Yodds);
-      //  qDebug()<<*Figs;
-      //  qDebug()<<lst.height<<lst.width;
         gpiRotate.at(realnum).at(maxpp.at(realnum))->setPos(XStart-pt.x()+cx,-pt.y()+YStart+CurList+cy);
-     //   qDebug()<<gpiRotate.at(realnum).at(maxpp.at(realnum))->pos();
         QApplication::processEvents();
-     //   if ((i==1) && (realnum==4))
-      //      pause(100);
         bool BadWidth;
         bool BadHeight;
         if (isFigInList(realnum,itmLst,&BadWidth,&BadHeight,pt))
@@ -1786,7 +1705,6 @@ bool MainWindow::TrySetupFigs(QList <int> * Figs, SLists lst, bool SetLabels = t
             FTr.x=cx;
             FTr.y=cy;
             FTr.cang=cang;
-          //  qDebug()<<"resang="<<cang;
             FTr.ang180=cang180;
             FTr.ang270=cang270;
             AFTr.replace(i,FTr);
@@ -1823,13 +1741,12 @@ void MainWindow::RotateFigure(int FigID)
     QMatrix mtx;
     mtx.rotate(90);
 
-   // for (int i=0; i<gpiRotate.at(FigID).count(); ++i)
- //  {
-        QPolygonF pf=gpiRotate.at(FigID).at(maxpp.at(FigID))->path().toFillPolygon(mtx);
-        QPainterPath pp;
-        pp.addPolygon(pf);
-        gpiRotate.at(FigID).at(maxpp.at(FigID))->setPath(pp);
-  //  }
+
+    QPolygonF pf=gpiRotate.at(FigID).at(maxpp.at(FigID))->path().toFillPolygon(mtx);
+    QPainterPath pp;
+    pp.addPolygon(pf);
+    gpiRotate.at(FigID).at(maxpp.at(FigID))->setPath(pp);
+
 
     for (int i=0; i<gpiRotate.at(FigID).at(maxpp.at(FigID))->childItems().count(); ++i)
     {
@@ -2096,7 +2013,6 @@ void MainWindow::AddListToScene()
 
         itmLst->setRect(rct);
         QPointF pos=ui->graphicsView->mapToScene(QPoint(30,30));
-        //itmLst->setPos(-35000,-20000);
         itmLst->setPos(pos);
         itmLst->setBrush(QBrush(QColor(99,0,0,50)));
         itmLst->setFlags(QGraphicsItem::ItemIsSelectable | QGraphicsItem::ItemIsMovable);

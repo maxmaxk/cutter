@@ -2,5 +2,7 @@
     <qresource prefix="/">
         <file>g16780.png</file>
         <file>g16782.png</file>
+        <file>g4495.png</file>
+        <file>g4511.png</file>
     </qresource>
 </RCC>

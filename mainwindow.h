@@ -120,13 +120,6 @@ private:
     void AddToException(QList <int> *, SLists);
     QList <int> maxpp;
     float hip,lowp,leftp,rightp;
-    static int const FirstKdiv=10;
-    static int const NQuality=4;
-    static int const MaxFigPerList=4;
-    static int const KListGrid=10;
-    static int const XStart=0;
-    static int const YStart=-20000;
-    static int const SlideOffset=-10000;
     int FigID;
     Logger * lg;
     float maxlwList;
@@ -149,13 +142,18 @@ private:
     void clearRects();
     void AddItemLabel(QGraphicsItem *, QString, bool isList = true);
 
+    static int const FirstKdiv=10;
+    static int const NQuality=4;
+    static int const MaxFigPerList=4;
+    static int const KListGrid=10;
+    static int const XStart=0;
+    static int const YStart=-20000;
+    static int const SlideOffset=-10000;
+
 public slots:
     void exit();
     void RunSlot();
     void SetListSize();
-  //  void ListVisible(bool);
-  //  void gpiVisible(bool);
-  //  void gpiRotateVisible(bool);
     void IndexChange(QModelIndex);
     void FindStr();
     void FindNextDown();
